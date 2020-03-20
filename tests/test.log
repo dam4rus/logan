@@ -1,0 +1,13 @@
+2020-01-01 10:00:00 INFO Start of log file
+2020-01-01 10:00:01 INFO Mouse left down at 0, 0
+2020-01-01 10:00:02 INFO Mouse moved to 10, 0
+2020-01-01 10:00:03 INFO Mouse left up at 10, 0
+2020-01-01 10:00:03 WARN Invalid mouse coordinates 10, 0
+2020-01-01 10:00:03 INFO Set state to options
+2020-01-01 10:00:04 INFO Mouse left down at 10, 0
+2020-01-01 10:00:04 INFO Mouse moved to 10, 10
+2020-01-01 10:00:05 INFO Mouse left up at 10, 10
+2020-01-01 10:00:05 INFO Set state to main_menu
+2020-01-01 10:00:50 ERROR Failed to start application
+An unknown error occurred
+2020-01-01 10:01:00 INFO End of log file
