@@ -1,136 +1,108 @@
 use ansi_term::Color;
 use regex::Regex;
-use std::io::{BufRead, Lines};
+use crate::config::{PatternColors, EventPatterns};
+
+pub trait Processor {
+    fn process_line(&mut self, line: &str) -> Option<String>;
+}
 
 #[derive(Debug, Clone)]
-pub struct PatternColor {
-    pub regex: Regex,
-    pub color: Color,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct PatternColors(pub Vec<PatternColor>);
-
-impl PatternColors {
-    pub fn find_color_for_pattern<T: AsRef<str>>(&self, line: T) -> Option<Color> {
-        self.0.iter().find(|pattern| pattern.regex.is_match(line.as_ref())).map(|pattern| pattern.color)
-    }
-}
-
-#[derive(Debug)]
-pub struct ColorizeLines<B: BufRead> {
+pub struct Colorize {
     pattern_colors: PatternColors,
-    lines: Lines<B>,
     current_color: Option<Color>,
 }
 
-impl<B: BufRead> ColorizeLines<B> {
-    pub fn new(pattern_colors: PatternColors, lines: Lines<B>) -> Self {
-        Self {
+impl Colorize {
+    pub fn new(pattern_colors: PatternColors) -> Self {
+        Self { 
             pattern_colors,
-            lines,
             current_color: None,
         }
     }
 }
 
-impl<B: BufRead> Iterator for ColorizeLines<B> {
-    type Item = String;
+impl Processor for Colorize {
+    fn process_line(&mut self, line: &str) -> Option<String> {
+        if let Some(color) = self.pattern_colors.find_color_for_pattern(line) {
+            self.current_color = Some(color);
+        }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.lines.next().and_then(|line_result| line_result.ok()).map(|line| {
-            if let Some(color) = self.pattern_colors.find_color_for_pattern(&line) {
-                self.current_color = Some(color);
-            }
-
-            self.current_color.unwrap_or(Color::White).paint(line).to_string()
-        })
+        Some(self.current_color.unwrap_or(Color::White).paint(line).to_string())
     }
 }
 
-#[derive(Debug)]
-pub struct Events<B: BufRead> {
-    start_regex: Regex,
-    end_regex: Regex,
-    lines: Lines<B>,
-    color: Option<Color>,
+#[derive(Debug, Clone)]
+pub struct EventProcessor {
+    event: EventPatterns,
+    current_event: Option<String>,
 }
 
-impl<B: BufRead> Events<B> {
-    pub fn new(start_regex: Regex, end_regex: Regex, lines: Lines<B>, color: Option<Color>) -> Self {
+impl EventProcessor {
+    pub fn new(event: EventPatterns) -> Self {
         Self {
-            start_regex,
-            end_regex,
-            lines,
+            event,
+            current_event: None,
+        }
+    }
+}
+
+impl Processor for EventProcessor {
+    fn process_line(&mut self, line: &str) -> Option<String> {
+        match &mut self.current_event {
+            Some(event) => {
+                if self.event.end_regex.is_match(line) {
+                    let event = format!("Event:\n{}{}\n", self.current_event.take().unwrap(), line);
+                    Some(self.event.color.map(|color| color.paint(&event).to_string()).unwrap_or(event))
+                } else {
+                    *event += format!("{}\n", line).as_str();
+                    None
+                }
+            }
+            None => {
+                if self.event.start_regex.is_match(line) {
+                    self.current_event = Some(format!("{}\n", line));
+                }
+
+                None
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StateProcessor {
+    pub(crate) regex: Regex,
+    pub(crate) capture_group: usize,
+    pub(crate) color: Option<Color>,
+}
+
+impl StateProcessor {
+    pub fn new(regex: Regex, capture_group: usize, color: Option<Color>) -> Self {
+        Self {
+            regex,
+            capture_group,
             color,
         }
     }
 }
 
-impl<B: BufRead> Iterator for Events<B> {
-    type Item = String;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut event = None;
-        while let Some(Ok(line)) = self.lines.next() {
-            if self.start_regex.is_match(line.as_str()) {
-                event = Some(line);
-                break;
-            }
-        }
-
-        let mut event = event.map(|line| line + "\n")?;
-        while let Some(Ok(line)) = self.lines.next() {
-            event += format!("{}\n", line).as_str();
-            if self.end_regex.is_match(line.as_str()) {
-                break;
-            }
-        }
-
-        self.color.map(|color| color.paint(&event).to_string()).or(Some(event))
-    }
-}
-
-#[derive(Debug)]
-pub struct States<B: BufRead> {
-    regex: Regex,
-    capture_group: usize,
-    lines: Lines<B>,
-}
-
-impl<B: BufRead> States<B> {
-    pub fn new(regex: Regex, capture_group: usize, lines: Lines<B>) -> Self {
-        Self {
-            regex,
-            capture_group,
-            lines,
-        }
-    }
-}
-
-impl<B: BufRead> Iterator for States<B> {
-    type Item = String;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok(line)) = self.lines.next() {
-            let captured_string = self
-                .regex
-                .captures(line.as_str())
-                .and_then(|captures| captures.get(self.capture_group))
-                .map(|group| group.as_str().to_owned());
-
-            if let Some(state) = captured_string {
-                return Some(state);
-            }
-        }
-
-        None
+impl Processor for StateProcessor {
+    fn process_line(&mut self, line: &str) -> Option<String> {
+        self
+            .regex
+            .captures(line)
+            .and_then(|captures| captures.get(self.capture_group))
+            .map(|group| {
+                let state = format!("State: {}\n", group.as_str());
+                self.color.map(|color| color.paint(&state).to_string()).unwrap_or(state)
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ColorizeLines, Events, PatternColors, PatternColor, States};
+    use super::{Colorize, EventProcessor, StateProcessor, Processor};
+    use crate::config::{PatternColors, PatternColor, EventPatterns};
     use ansi_term::Color;
     use regex::Regex;
     use std::{
@@ -167,10 +139,11 @@ mod tests {
         let test_log_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/test.log");
         let file = File::open(test_log_path).unwrap();
         let reader = BufReader::new(file);
+        let mut lines = reader.lines();
 
-        let mut colorize_lines = ColorizeLines::new(create_level_colors(), reader.lines());
+        let mut colorize = Colorize::new(create_level_colors());
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:00 INFO Start of log file")
@@ -178,7 +151,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:01 INFO Mouse left down at 0, 0")
@@ -186,7 +159,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:02 INFO Mouse moved to 10, 0")
@@ -194,7 +167,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:03 INFO Mouse left up at 10, 0")
@@ -202,7 +175,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(24)
                     .paint("2020-01-01 10:00:03 WARN Invalid mouse coordinates 10, 0")
@@ -210,7 +183,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:03 INFO Set state to options")
@@ -218,7 +191,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:04 INFO Mouse left down at 10, 0")
@@ -226,7 +199,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:04 INFO Mouse moved to 10, 10")
@@ -234,7 +207,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:05 INFO Mouse left up at 10, 10")
@@ -242,7 +215,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:00:05 INFO Set state to main_menu")
@@ -250,7 +223,7 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(88)
                     .paint("2020-01-01 10:00:50 ERROR Failed to start application")
@@ -258,11 +231,11 @@ mod tests {
             )
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(Color::Fixed(88).paint("An unknown error occurred").to_string())
         );
         assert_eq!(
-            colorize_lines.next(),
+            colorize.process_line(lines.next().unwrap().unwrap().as_str()),
             Some(
                 Color::Fixed(28)
                     .paint("2020-01-01 10:01:00 INFO End of log file")
@@ -276,40 +249,45 @@ mod tests {
         let test_log_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/test.log");
         let file = File::open(test_log_path).unwrap();
         let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut events = EventProcessor::new(EventPatterns {
+            start_regex: Regex::new(format!(r"{} INFO Mouse left down at [\d]+, [\d]+", DATE_REGEX_STR).as_str()).unwrap(),
+            end_regex: Regex::new(format!(r"{} INFO Mouse left up at [\d]+, [\d]+", DATE_REGEX_STR).as_str()).unwrap(),
+            color: Some(Color::Fixed(28)),
+        });
 
-        let mut events = Events::new(
-            Regex::new(format!(r"{} INFO Mouse left down at [\d]+, [\d]+", DATE_REGEX_STR).as_str()).unwrap(),
-            Regex::new(format!(r"{} INFO Mouse left up at [\d]+, [\d]+", DATE_REGEX_STR).as_str()).unwrap(),
-            reader.lines(),
-            Some(Color::Fixed(28)),
-        );
-
-        assert_eq!(
-            events.next(),
-            Some(
-                Color::Fixed(28)
-                    .paint(
-                        "2020-01-01 10:00:01 INFO Mouse left down at 0, 0
+        for line in &mut lines {
+            if let Some(event) = events.process_line(line.unwrap().as_str()) {
+                assert_eq!(
+                    event,
+                    Color::Fixed(28)
+                        .paint("Event:
+2020-01-01 10:00:01 INFO Mouse left down at 0, 0
 2020-01-01 10:00:02 INFO Mouse moved to 10, 0
 2020-01-01 10:00:03 INFO Mouse left up at 10, 0
 "
                     )
-                    .to_string()
-            ),
-        );
-        assert_eq!(
-            events.next(),
-            Some(
-                Color::Fixed(28)
-                    .paint(
-                        "2020-01-01 10:00:04 INFO Mouse left down at 10, 0
+                        .to_string()
+                );
+                break;
+            }
+        }
+
+        for line in &mut lines {
+            if let Some(event) = events.process_line(line.unwrap().as_str()){
+                assert_eq!(
+                    event,
+                    Color::Fixed(28)
+                        .paint("Event:
+2020-01-01 10:00:04 INFO Mouse left down at 10, 0
 2020-01-01 10:00:04 INFO Mouse moved to 10, 10
 2020-01-01 10:00:05 INFO Mouse left up at 10, 10
 "
-                    )
-                    .to_string()
-            ),
-        );
+                        )
+                        .to_string()
+                );
+            }
+        }
     }
 
     #[test]
@@ -317,13 +295,25 @@ mod tests {
         let test_log_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/test.log");
         let file = File::open(test_log_path).unwrap();
         let reader = BufReader::new(file);
-        let mut states = States::new(
+        let mut lines = reader.lines();
+        let mut states = StateProcessor::new(
             Regex::new(format!("{} INFO Set state to (.*)", DATE_REGEX_STR).as_str()).unwrap(),
             1,
-            reader.lines(),
+            Some(Color::Fixed(28)),
         );
 
-        assert_eq!(states.next(), Some(String::from("options")));
-        assert_eq!(states.next(), Some(String::from("main_menu")));
+        for line in &mut lines {
+            if let Some(state) = states.process_line(line.unwrap().as_str()) {
+                assert_eq!(state, Color::Fixed(28).paint("State: options\n").to_string());
+                break;
+            }
+        }
+
+        for line in &mut lines {
+            if let Some(state) = states.process_line(line.unwrap().as_str()) {
+                assert_eq!(state, Color::Fixed(28).paint("State: main_menu\n").to_string());
+                break;
+            }
+        }
     }
 }
