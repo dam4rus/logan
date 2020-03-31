@@ -1,10 +1,13 @@
-use crate::processors::{EventPatterns, PatternColor, PatternColors, StateProcessor};
+use crate::{
+    error::{ConfigError, JsonType},
+    processors::{EventPatterns, PatternColor, PatternColors, StateProcessor},
+};
 use ansi_term::Color;
 use regex::Regex;
 use serde_json;
 use std::{fs::File, io::BufReader};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, ConfigError>;
 
 #[derive(Debug)]
 pub struct Config {
@@ -29,7 +32,7 @@ impl Config {
         let prefix = match &json_value["prefix"] {
             Value::String(prefix) => Some(prefix),
             Value::Null => None,
-            _ => panic!("Invalid config json: unknown prefix value"),
+            _ => return Err(ConfigError::JsonType("prefix", JsonType::String)),
         };
 
         let pattern_colors = match &json_value["pattern_colors"] {
@@ -39,20 +42,25 @@ impl Config {
                     .map(|pattern_color| {
                         let regex = match &pattern_color["pattern"] {
                             Value::String(pattern) => {
-                                create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)?
+                                create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)
+                                    .map_err(|err| ConfigError::Regex("pattern_colors.pattern", err))?
                             }
-                            _ => panic!("Invalid config json: unknown pattern value"),
+                            _ => return Err(ConfigError::JsonType("pattern_colors.pattern", JsonType::String)),
                         };
                         let color = match &pattern_color["color"] {
-                            Value::String(fixed_color) => Color::Fixed(fixed_color.parse()?),
-                            _ => panic!("Invalid config json: unknown color value"),
+                            Value::String(fixed_color) => Color::Fixed(
+                                fixed_color
+                                    .parse()
+                                    .map_err(|err| ConfigError::ParseInt("pattern_colors.color", err))?,
+                            ),
+                            _ => return Err(ConfigError::JsonType("pattern_colors.color", JsonType::String)),
                         };
                         Ok(PatternColor { regex, color })
                     })
                     .collect::<Result<Vec<_>>>()?,
             ),
             Value::Null => Default::default(),
-            _ => panic!("Invalid config json: unknown pattern_colors value"),
+            _ => return Err(ConfigError::JsonType("pattern_colors", JsonType::Array)),
         };
 
         let events = match &json_value["event_patterns"] {
@@ -61,20 +69,26 @@ impl Config {
                 .map(|event_pattern| {
                     let start_regex = match &event_pattern["start_pattern"] {
                         Value::String(pattern) => {
-                            create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)?
+                            create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)
+                                .map_err(|err| ConfigError::Regex("event_patterns.start_pattern", err))?
                         }
-                        _ => panic!("Invalid config json: unknown start_pattern value"),
+                        _ => return Err(ConfigError::JsonType("event_patterns.start_pattern", JsonType::String)),
                     };
                     let end_regex = match &event_pattern["end_pattern"] {
                         Value::String(pattern) => {
-                            create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)?
+                            create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)
+                                .map_err(|err| ConfigError::Regex("event_patterns.end_pattern", err))?
                         }
-                        _ => panic!("Invalid config json: unknown end_pattern value"),
+                        _ => return Err(ConfigError::JsonType("event_patterns.end_pattern", JsonType::String)),
                     };
                     let color = match &event_pattern["color"] {
-                        Value::String(fixed_color) => Some(Color::Fixed(fixed_color.parse()?)),
+                        Value::String(fixed_color) => Some(Color::Fixed(
+                            fixed_color
+                                .parse()
+                                .map_err(|err| ConfigError::ParseInt("event_patterns.color", err))?,
+                        )),
                         Value::Null => None,
-                        _ => panic!("Invalid config json: unknown color value"),
+                        _ => return Err(ConfigError::JsonType("event_patterns.color", JsonType::String)),
                     };
                     Ok(EventPatterns {
                         start_regex,
@@ -84,7 +98,7 @@ impl Config {
                 })
                 .collect::<Result<Vec<_>>>()?,
             Value::Null => Default::default(),
-            _ => panic!("Invalid config json: unknown event_patterns value"),
+            _ => return Err(ConfigError::JsonType("event_patterns", JsonType::Array)),
         };
 
         let states = match &json_value["state_patterns"] {
@@ -93,20 +107,25 @@ impl Config {
                 .map(|state_pattern| {
                     let regex = match &state_pattern["pattern"] {
                         Value::String(pattern) => {
-                            create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)?
+                            create_regex_with_prefix(&prefix.map(|prefix| prefix.as_str()), pattern)
+                                .map_err(|err| ConfigError::Regex("state_patterns.pattern", err))?
                         }
-                        _ => panic!("Invalid config json: unknown pattern value"),
+                        _ => return Err(ConfigError::JsonType("state_patterns.pattern", JsonType::String)),
                     };
                     let color = match &state_pattern["color"] {
-                        Value::String(fixed_color) => Some(Color::Fixed(fixed_color.parse()?)),
+                        Value::String(fixed_color) => Some(Color::Fixed(
+                            fixed_color
+                                .parse()
+                                .map_err(|err| ConfigError::ParseInt("state_patterns.color", err))?,
+                        )),
                         Value::Null => None,
-                        _ => panic!("Invalid config json: unknown color value"),
+                        _ => return Err(ConfigError::JsonType("state_patterns.color", JsonType::String)),
                     };
                     Ok(StateProcessor::new(regex, color))
                 })
                 .collect::<Result<Vec<_>>>()?,
             Value::Null => Default::default(),
-            _ => panic!("Invalid config json: unknown state_patterns value"),
+            _ => return Err(ConfigError::JsonType("state_patterns", JsonType::Array)),
         };
 
         Ok(Self {

@@ -9,6 +9,7 @@ use std::{
 };
 
 mod config;
+mod error;
 mod processors;
 
 fn main() {
@@ -52,7 +53,13 @@ fn main() {
         ("use-config", Some(config_matches)) => {
             let config_path = PathBuf::from(config_matches.value_of("config_path").unwrap());
             let config_file = File::open(config_path).expect("Failed to open config file");
-            let config = Config::from_json_file(config_file).unwrap();
+            let config = match Config::from_json_file(config_file) {
+                Ok(config) => config,
+                Err(err) => {
+                    println!("{}", err);
+                    return;
+                }
+            };
             config
                 .events
                 .iter()
