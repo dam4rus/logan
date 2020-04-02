@@ -69,3 +69,22 @@ impl Display for JsonType {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct ParseColorError {
+    message: String,
+}
+
+impl ParseColorError {
+    pub fn new(str_value: &str, err: ParseIntError) -> Self {
+        Self { message: format!("Invalid color value: {} ({})", str_value, err) }
+    }
+}
+
+impl Error for ParseColorError {}
+
+impl Display for ParseColorError {
+    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
+        fmt.write_str(self.message.as_str())
+    }
+}

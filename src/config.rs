@@ -1,6 +1,6 @@
 use crate::{
     error::{ConfigError, JsonType},
-    processors::{EventPatterns, PatternColor, PatternColors, StateProcessor},
+    processors::{EventPatterns, PatternColor, StateProcessor},
 };
 use ansi_term::Color;
 use regex::Regex;
@@ -11,7 +11,7 @@ type Result<T> = std::result::Result<T, ConfigError>;
 
 #[derive(Debug)]
 pub struct Config {
-    pub pattern_colors: PatternColors,
+    pub pattern_colors: Option<Vec<PatternColor>>,
     pub events: Vec<EventPatterns>,
     pub states: Vec<StateProcessor>,
 }
@@ -36,8 +36,7 @@ impl Config {
         };
 
         let pattern_colors = match &json_value["pattern_colors"] {
-            Value::Array(pattern_colors) => PatternColors(
-                pattern_colors
+            Value::Array(pattern_colors) => Some(pattern_colors
                     .iter()
                     .map(|pattern_color| {
                         let regex = match &pattern_color["pattern"] {
@@ -57,9 +56,8 @@ impl Config {
                         };
                         Ok(PatternColor { regex, color })
                     })
-                    .collect::<Result<Vec<_>>>()?,
-            ),
-            Value::Null => Default::default(),
+                    .collect::<Result<Vec<_>>>()?),
+            Value::Null => None,
             _ => return Err(ConfigError::JsonType("pattern_colors", JsonType::Array)),
         };
 
@@ -145,7 +143,7 @@ pub(crate) fn create_regex_with_prefix(
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, PatternColors};
+    use super::Config;
     use ansi_term::Color;
 
     #[test]
@@ -169,8 +167,7 @@ mod tests {
         }"#;
 
         let config = Config::from_json_str(json).unwrap();
-        let PatternColors(pattern_colors) = config.pattern_colors;
-        let pattern = &pattern_colors[0];
+        let pattern = &config.pattern_colors.unwrap()[0];
         assert_eq!(pattern.regex.as_str(), format!(r#"{}NetworkManager "#, prefix));
         assert_eq!(pattern.color, Color::Fixed(28));
 
@@ -195,7 +192,8 @@ mod tests {
         let json = r#"{}"#;
 
         let config = Config::from_json_str(json).unwrap();
-        assert!(config.pattern_colors.0.is_empty());
+        assert!(config.pattern_colors.is_none());
         assert!(config.events.is_empty());
+        assert!(config.states.is_empty());
     }
 }

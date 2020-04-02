@@ -3,6 +3,9 @@ use regex::Regex;
 
 pub trait Processor {
     fn process_line(&mut self, line: &str) -> Option<String>;
+    fn result(&self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -11,26 +14,14 @@ pub struct PatternColor {
     pub color: Color,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct PatternColors(pub Vec<PatternColor>);
-
-impl PatternColors {
-    pub fn find_color_for_pattern<T: AsRef<str>>(&self, line: T) -> Option<Color> {
-        self.0
-            .iter()
-            .find(|pattern| pattern.regex.is_match(line.as_ref()))
-            .map(|pattern| pattern.color)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Colorize {
-    pattern_colors: PatternColors,
+    pattern_colors: Vec<PatternColor>,
     current_color: Option<Color>,
 }
 
 impl Colorize {
-    pub fn new(pattern_colors: PatternColors) -> Self {
+    pub fn new(pattern_colors: Vec<PatternColor>) -> Self {
         Self {
             pattern_colors,
             current_color: None,
@@ -40,7 +31,7 @@ impl Colorize {
 
 impl Processor for Colorize {
     fn process_line(&mut self, line: &str) -> Option<String> {
-        if let Some(color) = self.pattern_colors.find_color_for_pattern(line) {
+        if let Some(color) = self.pattern_colors.iter().find(|pattern| pattern.regex.is_match(line)).map(|pattern| pattern.color) {
             self.current_color = Some(color);
         }
 
@@ -101,28 +92,37 @@ impl Processor for EventProcessor {
 pub struct StateProcessor {
     pub(crate) regex: Regex,
     pub(crate) color: Option<Color>,
+    pub(crate) last_state: Option<String>
 }
 
 impl StateProcessor {
     pub fn new(regex: Regex, color: Option<Color>) -> Self {
-        Self { regex, color }
+        Self { regex, color, last_state: None }
     }
 }
 
 impl Processor for StateProcessor {
     fn process_line(&mut self, line: &str) -> Option<String> {
         if self.regex.is_match(line) {
-            let state = format!("State: {}\n", line);
+            self.last_state = Some(line.to_owned());
+            let state = format!("State change: {}\n", line);
             Some(self.color.map(|color| color.paint(&state).to_string()).unwrap_or(state))
         } else {
             None
         }
     }
+
+    fn result(&self) -> Option<String> {
+        self.last_state.as_ref().map(|s| {
+            let message = format!("Last state: {}", s);
+            self.color.map(|color| color.paint(&message).to_string()).unwrap_or(message)
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Colorize, EventPatterns, EventProcessor, PatternColor, PatternColors, Processor, StateProcessor};
+    use super::{Colorize, EventPatterns, EventProcessor, PatternColor, Processor, StateProcessor};
     use ansi_term::Color;
     use regex::Regex;
     use std::{
@@ -133,8 +133,8 @@ mod tests {
 
     const DATE_REGEX_STR: &'static str = r"[\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2}";
 
-    fn create_level_colors() -> PatternColors {
-        PatternColors(vec![
+    fn create_level_colors() -> Vec<PatternColor> {
+        vec![
             PatternColor {
                 regex: Regex::new(format!("{} INFO ", DATE_REGEX_STR).as_str()).unwrap(),
                 color: Color::Fixed(28),
@@ -147,7 +147,7 @@ mod tests {
                 regex: Regex::new(format!("{} ERROR ", DATE_REGEX_STR).as_str()).unwrap(),
                 color: Color::Fixed(88),
             },
-        ])
+        ]
     }
 
     #[test]
