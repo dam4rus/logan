@@ -148,43 +148,43 @@ mod tests {
 
     #[test]
     pub fn test_config_from_json() {
-        let prefix = r#"[\w]{3} [\d]{2} [\d]{2}:[\d]{2}:[\d]{2} [^ ]* "#;
+        let prefix = r#"[\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2} "#;
         let json = r#"{
-            "prefix": "[\\w]{3} [\\d]{2} [\\d]{2}:[\\d]{2}:[\\d]{2} [^ ]* ",
+            "prefix": "[\\d]{4}-[\\d]{2}-[\\d]{2} [\\d]{2}:[\\d]{2}:[\\d]{2} ",
             "pattern_colors": [
-                { "pattern": "NetworkManager ", "color": "28" }
+                { "pattern": "INFO", "color": "28" }
             ],
             "event_patterns": [
                 {
-                    "start_pattern": "Starting Network Manager ",
-                    "end_pattern": "Started Network Manager ",
-                    "color": "28"
+                    "start_pattern": "INFO Mouse left down",
+                    "end_pattern": "INFO Mouse left up",
+                    "color": "29"
                 }
             ],
             "state_patterns": [
-                { "pattern": "Switched to [^ ]+", "group": 1, "color": "28" }
+                { "pattern": "INFO Set state to", "color": "30" }
             ]
         }"#;
 
         let config = Config::from_json_str(json).unwrap();
         let pattern = &config.pattern_colors.unwrap()[0];
-        assert_eq!(pattern.regex.as_str(), format!(r#"{}NetworkManager "#, prefix));
+        assert_eq!(pattern.regex.as_str(), format!(r#"{}INFO"#, prefix));
         assert_eq!(pattern.color, Color::Fixed(28));
 
         let events = config.events;
         assert_eq!(
             events[0].start_regex.as_str(),
-            format!(r#"{}Starting Network Manager "#, prefix)
+            format!(r#"{}INFO Mouse left down"#, prefix)
         );
         assert_eq!(
             events[0].end_regex.as_str(),
-            format!(r#"{}Started Network Manager "#, prefix)
+            format!(r#"{}INFO Mouse left up"#, prefix)
         );
-        assert_eq!(events[0].color, Some(Color::Fixed(28)));
+        assert_eq!(events[0].color, Some(Color::Fixed(29)));
 
         let states = config.states;
-        assert_eq!(states[0].regex.as_str(), format!(r#"{}Switched to [^ ]+"#, prefix));
-        assert_eq!(states[0].color, Some(Color::Fixed(28)));
+        assert_eq!(states[0].regex.as_str(), format!(r#"{}INFO Set state to"#, prefix));
+        assert_eq!(states[0].color, Some(Color::Fixed(30)));
     }
 
     #[test]
