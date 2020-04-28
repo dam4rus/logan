@@ -1,0 +1,18 @@
+{
+    "prefix": "[\\d]{4}-[\\d]{2}-[\\d]{2} [\\d]{2}:[\\d]{2}:[\\d]{2} ",
+    "pattern_colors": [
+        { "pattern": "INFO", "color": "28" },
+        { "pattern": "WARN", "color": "24" },
+        { "pattern": "ERROR", "color": "88" }
+    ],
+    "event_patterns": [
+        {
+            "start_pattern": "INFO Mouse left down",
+            "end_pattern": "INFO Mouse left up",
+            "color": "29"
+        }
+    ],
+    "state_patterns": [
+        { "pattern": "INFO Set state to", "color": "30" }
+    ]
+}
