@@ -29,7 +29,7 @@ fn main() {
                         .multiple(true)
                         .number_of_values(2)
                         .required(true)
-                        .value_names(&["COLOR", "PATTERN"]),
+                        .value_names(&["PATTERN", "COLOR"]),
                 ),
         )
         .subcommand(
@@ -58,13 +58,22 @@ fn main() {
         }
     };
 
+    let mut last_process_required_separator = false;
+    let mut has_output = false;
     let input_file = File::open(input_path).expect("Failed to open input file");
     let reader = BufReader::new(input_file);
     for line in reader.lines() {
         let line = line.expect("Failed to read line from input file");
         for processor in &mut processors {
             if let Some(output) = processor.process_line(line.as_str()) {
-                println!("{}", output);
+                if has_output && (last_process_required_separator || processor.requires_separator()) {
+                    println!("{sep}\n{}", output, sep="-".repeat(50));
+                } else {
+                    println!("{}", output);
+                }
+
+                has_output = true;
+                last_process_required_separator = processor.requires_separator();
             }
         }
     }
@@ -114,8 +123,8 @@ fn parse_processors(matches: ArgMatches) -> Result<Vec<Box<dyn Processor>>, Box<
                 .as_slice()
                 .chunks_exact(2)
                 .map(|params| {
-                    let color_value = params[0];
-                    let regex_value = params[1];
+                    let regex_value = params[0];
+                    let color_value = params[1];
                     let color = Color::Fixed(color_value.parse::<u8>().map_err(|err| ParseColorError::new(color_value, err))?);
                     let regex = create_regex_with_prefix(&prefix, regex_value)?;
                     Ok(PatternColor { color, regex })

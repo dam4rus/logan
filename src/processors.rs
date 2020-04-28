@@ -3,6 +3,11 @@ use regex::Regex;
 
 pub trait Processor {
     fn process_line(&mut self, line: &str) -> Option<String>;
+
+    fn requires_separator(&self) -> bool {
+        false
+    }
+
     fn result(&self) -> Option<String> {
         None
     }
@@ -65,7 +70,7 @@ impl Processor for EventProcessor {
     fn process_line(&mut self, line: &str) -> Option<String> {
         match &mut self.current_event {
             Some(_) if self.event_patterns.end_regex.is_match(line) => {
-                let event = format!("Event:\n{}{}\n", self.current_event.take().unwrap(), line);
+                let event = format!("Event:\n{}{}", self.current_event.take().unwrap(), line);
                 Some(
                     self.event_patterns
                         .color
@@ -86,6 +91,10 @@ impl Processor for EventProcessor {
             }
         }
     }
+
+    fn requires_separator(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -105,11 +114,15 @@ impl Processor for StateProcessor {
     fn process_line(&mut self, line: &str) -> Option<String> {
         if self.regex.is_match(line) {
             self.last_state = Some(line.to_owned());
-            let state = format!("State change: {}\n", line);
+            let state = format!("State change:\n{}", line);
             Some(self.color.map(|color| color.paint(&state).to_string()).unwrap_or(state))
         } else {
             None
         }
+    }
+
+    fn requires_separator(&self) -> bool {
+        true
     }
 
     fn result(&self) -> Option<String> {
@@ -282,8 +295,7 @@ mod tests {
                             "Event:
 2020-01-01 10:00:01 INFO Mouse left down at 0, 0
 2020-01-01 10:00:02 INFO Mouse moved to 10, 0
-2020-01-01 10:00:03 INFO Mouse left up at 10, 0
-"
+2020-01-01 10:00:03 INFO Mouse left up at 10, 0"
                         )
                         .to_string()
                 );
@@ -300,8 +312,7 @@ mod tests {
                             "Event:
 2020-01-01 10:00:04 INFO Mouse left down at 10, 0
 2020-01-01 10:00:04 INFO Mouse moved to 10, 10
-2020-01-01 10:00:05 INFO Mouse left up at 10, 10
-"
+2020-01-01 10:00:05 INFO Mouse left up at 10, 10"
                         )
                         .to_string()
                 );
@@ -325,7 +336,7 @@ mod tests {
                 assert_eq!(
                     state,
                     Color::Fixed(28)
-                        .paint("State: 2020-01-01 10:00:03 INFO Set state to options\n")
+                        .paint("State change:\n2020-01-01 10:00:03 INFO Set state to options")
                         .to_string()
                 );
                 break;
@@ -337,7 +348,7 @@ mod tests {
                 assert_eq!(
                     state,
                     Color::Fixed(28)
-                        .paint("State: 2020-01-01 10:00:05 INFO Set state to main_menu\n")
+                        .paint("State change:\n2020-01-01 10:00:05 INFO Set state to main_menu")
                         .to_string()
                 );
                 break;
