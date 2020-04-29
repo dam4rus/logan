@@ -1,12 +1,13 @@
 # Logan
 
-A simple CLI tool to make working with log files easier by printing out lines with different colors based on patterns
-or events with a start and end pattern.
+A simple CLI tool to make working with log files easier.
 
 ## Usage
 
+Logan supports multiple "processors" which determines the output format. It can be used to print out lines with
+different colors, define "events" to capture lines between a "start" and an "end" or simply filter the output (grep).
 Logan can be used with CLI commands or a config file. Using it with CLI commands are simpler but limited to a single
-processor.
+processor. The following processors are available right now:
 
 ### Coloring lines
 
@@ -16,9 +17,8 @@ You can print out lines with different colors with the __colorize__ command:
 $ logan example.log colorize -p "INFO" 28 -p "WARN" 24 -p "ERROR" 88
 ```
 
-Where the first parameter is the color and the second is a regex pattern.
-
-You can also define a prefix that will be prepended to every pattern with the -P or --prefix argument
+Where the first parameter is a regex pattern and the second is a color. You can also define a prefix that will be
+prepended to every pattern with the _-P_ or _--prefix_ argument:
 
 ```
 $ logan example.log colorize -P "[\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2} " -p "INFO" 28 -p "WARN" 24 -p "ERROR" 88
@@ -26,8 +26,8 @@ $ logan example.log colorize -P "[\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2}
 
 #### Note
 
-The color parameter refers to a pallette index of your terminal app. It will be possible to define RGB colors in a
-future release.
+The color parameter refers to a palette index of your terminal app. It will be possible to define RGB colors in a
+future release. You have to check out your terminal's color palette to know which index is which color.
 
 ### Events
 
@@ -54,7 +54,7 @@ On itself it's basically just a grep but you can combine these features by using
 
 ### Using a config file
 
-You can use a config file to combine these log processors. An example config file to combine all the previous commands
+You can use a config file to combine these log processors. An example config file that combines all the previous commands
 would look like this:
 
 ```json
@@ -84,4 +84,9 @@ and you can use this config file with the following command line parameters:
 $ logan example.log use-config example.json
 ```
 
-With a config file you can define multiple events and states.
+With a config file you can define multiple event and state as well.
+
+## Installation
+
+Currently you have to compile Logan to run it. The plan is to support all three major platform (Windows, Linux, MacOS)
+with pre-built binaries. You can also use __*cargo run -- ARGS*__ to run Logan.
